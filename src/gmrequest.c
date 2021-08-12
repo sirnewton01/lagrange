@@ -893,6 +893,56 @@ void submit_GmRequest(iGmRequest *d) {
         beginGopherConnection_GmRequest_(d, host, port ? port : 79);
         return;
     }
+    else if (equalCase_Rangecc(url.scheme, "gemcap")) {
+        char cmd[1024];
+	    snprintf(cmd, 1024, "gemini %s", cstr_String(&d->url));
+        FILE* fd = popen(cmd, "r");
+        
+        if (fd == NULL) {
+          resp->statusCode = failedToOpenFile_GmStatusCode;
+          setCStr_String(&resp->meta, "Error launching gemini command. Is it installed?");
+        } else {
+          iBlock *contents = new_Block(0);
+          char buffer[1024];
+          size_t rs = 0;
+          iBlock *bb = new_Block(0);
+          while (true) {
+            rs = fread(buffer, 1, 1024, fd);
+            if (rs == 0) {
+              break;
+            }
+            
+            free(bb);
+            bb = new_Block(rs);
+            setData_Block(bb, buffer, rs);
+            append_Block(contents, bb);
+            
+            if (rs < 1024) {
+              break;
+            }
+          }
+          
+          int exitCode = pclose(fd);
+          printf("Exit code is %d\n", exitCode);
+          if (exitCode != 0 && (exitCode < 10 || exitCode > 69)) {
+            // This is outside the range of gemini status codes
+            resp->statusCode = failedToOpenFile_GmStatusCode;
+            setCStr_String(&resp->meta, "Error launching gemini command. Is it installed?");
+          } else {
+            // TODO these come from stderr
+            resp->statusCode = success_GmStatusCode;
+            setCStr_String(&resp->meta, "text/gemini");
+            
+            if (resp->statusCode == success_GmStatusCode) {
+              set_Block(&resp->body, contents);
+            }
+          }
+        }
+        
+        d->state = finished_GmRequestState;
+        iNotifyAudience(d, finished, GmRequestFinished);
+        return;
+    }
     else if (!equalCase_Rangecc(url.scheme, "gemini") &&
              !equalCase_Rangecc(url.scheme, "titan")) {
         resp->statusCode = unsupportedProtocol_GmStatusCode;
